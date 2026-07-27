@@ -1,9 +1,14 @@
 /* =========================================================================
-   ORBITING HEART — main.js
-   A particle-built heart core, orbited by floating photo planes, set inside
-   a starfield with periodic shooting stars. Camera does a cinematic intro
-   fly-through, then hands control to the user (drag = rotate, wheel/pinch =
-   zoom). Music autoplays on first interaction with a mute toggle.
+   ORBITING RING — main.js
+
+   Reference-matched structure: a single hollow, circular ring
+   formation (glowing particle nebula + orbiting photo planes, both
+   following a circular band with a dark hollow center — an accretion-
+   disk look — set inside a
+   starfield with periodic shooting stars and soft purple bokeh circles.
+   Camera does a cinematic intro fly-through, then hands control to the
+   user (drag = rotate, wheel/pinch = zoom). Music autoplays on first
+   interaction with a mute toggle.
 
    Everything you're likely to want to tweak is grouped in CONFIG below.
    ========================================================================= */
@@ -16,37 +21,63 @@ import gsap from "gsap";
    0. CONFIG — tune the look & feel here without touching the logic below
    ------------------------------------------------------------------------ */
 const CONFIG = {
-  heart: {
-    particleCount: 9000,      // more = denser heart, costs more GPU/CPU
-    scale: 1.35,               // overall size of the heart
-    shellJitter: 0.55,         // how "fluffy"/volumetric the shell looks
-    color: 0xb79cff,           // base particle color (soft violet)
-    coreColor: 0xffffff,       // hot core color mixed in near center
-    size: 0.045,               // point sprite size
-    pulseSpeed: 1.1,           // heartbeat animation speed
-    pulseAmount: 0.06,         // how much it grows/shrinks (fraction of scale)
-    rotationSpeed: 0.06,       // slow idle spin, radians/sec
+  // Shared shape of the ring formation that both the particle nebula and
+  // the photos are scattered along. This is what makes it read as a
+  // ring: everything sits near the circle's outline, with a hollow
+  // gap in the middle rather than a filled-in blob.
+  formation: {
+    scale: 9.5,          // overall size (radial reach) of the ring
+    bandInner: 0.62,      // inner edge of the ring band, fraction of scale (bigger = smaller hollow)
+    bandOuter: 1.02,      // outer edge of the dense band
+    tiltX: -0.36,         // tilt so the ring is viewed obliquely, like the reference
+    tiltZ: 0.05,
+    spinSpeed: 0.018,      // slow rigid rotation of the whole formation
+  },
+
+  nebula: {
+    particleCount: 16000,     // more = denser glowing ring, costs more GPU/CPU
+    jitter: 0.85,              // perpendicular/depth fluffiness of the band
+    color: 0x8f6dff,           // outer glow color (soft violet)
+    hotColor: 0xffffff,        // inner-rim hot color
+    size: 0.05,
+    opacity: 0.85,
+    pulseSpeed: 1.0,           // heartbeat animation speed
+    pulseAmount: 0.035,        // how much the nebula grows/shrinks
   },
 
   starfield: {
     count: 3200,
-    radius: 60,                // spawn stars within this radius shell
-    minRadius: 18,              // ...but no closer than this
-    size: 0.09,
+    radius: 110,
+    minRadius: 40,
+    size: 0.14,
     color: 0xffffff,
   },
 
+  moon: {
+    particleCount: 7000,        // density of the moon's particle surface
+    radiusMult: 0.8,             // fraction of the ring's hollow radius the moon fills
+    color: 0xb9b3cf,              // base grey-lavender "moon rock" color
+    hotColor: 0xffffff,           // bright highlight color mixed in
+    size: 0.045,
+    opacity: 0.95,
+    spinSpeed: 0.05,               // independent slow rotation, radians/sec
+  },
+
   shootingStars: {
-    maxActive: 3,               // how many can be on-screen at once
-    spawnIntervalRange: [1.2, 3.5], // seconds between spawns (min, max)
-    speed: 26,                  // units/sec
-    trailLength: 9,
+    maxActive: 4,
+    spawnIntervalRange: [1.0, 3.0],
+    speed: 34,
+    trailLength: 14,        // number of glow sprites making up the fading trail
+    headSize: 0.5,           // size of the brightest sprite at the front
+    haloSize: 1.3,           // size of the soft outer glow behind the head
     color: 0xffffff,
   },
 
   orbitImages: {
     // Swap these with your own image URLs (any aspect ratio works —
-    // planes are sized from each texture's natural width/height).
+    // planes are sized from each texture's natural width/height). The
+    // ring reuses this list many times over (see `photoCount`) so a
+    // handful of URLs is enough to fill it out densely, like the reference.
     urls: [
       "https://picsum.photos/seed/heart1/300/400",
       "https://picsum.photos/seed/heart2/300/400",
@@ -61,22 +92,31 @@ const CONFIG = {
       "https://picsum.photos/seed/heart11/300/300",
       "https://picsum.photos/seed/heart12/300/400",
     ],
-    planeHeight: 1.9,           // base plane height in world units (width follows aspect)
-    minRadius: 3.4,             // closest orbit ring to the heart
-    maxRadius: 8.5,             // furthest orbit ring
-    minSpeed: 0.035,             // slowest orbit angular speed (rad/sec)
-    maxSpeed: 0.11,              // fastest orbit angular speed
-    maxTilt: 0.9,                // max orbital-plane tilt, radians (~51deg)
-    billboard: true,             // true = always face camera; false = face orbit direction
+    photoCount: 420,             // total planes scattered along the ring band (reference-style density)
+    planeHeight: 0.5,             // base plane height in world units (width follows aspect)
+    bandInnerMult: 0.88,           // photos fray a bit wider than the nebula band itself
+    bandOuterMult: 1.28,
+    bobAmount: 0.04,               // tiny per-photo twinkle/drift
+    bobSpeed: 0.6,
+    billboard: true,               // true = always face camera; false = stay flat in the ring plane
+  },
+
+  bokeh: {
+    count: 90,
+    minSize: 0.15,
+    maxSize: 1.6,
+    color: 0x9a7bff,
+    spreadRadius: 34,
+    minRadius: 6,
   },
 
   camera: {
-    fov: 55,
+    fov: 50,
     near: 0.1,
-    far: 200,
-    restRadius: 11,             // distance from heart once user has control
-    restPolarDeg: 68,           // resting vertical angle (90 = equator)
-    introDuration: 6.5,          // seconds for the intro fly-through
+    far: 250,
+    restRadius: 24,
+    restPolarDeg: 78,
+    introDuration: 6.5,
   },
 
   audio: {
@@ -95,7 +135,7 @@ const renderer = new THREE.WebGLRenderer({
   powerPreference: "high-performance",
 });
 renderer.setClearColor(0x000000, 1);
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // cap DPR for perf
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 const scene = new THREE.Scene();
@@ -106,59 +146,93 @@ const camera = new THREE.PerspectiveCamera(
   CONFIG.camera.near,
   CONFIG.camera.far
 );
-// Start the camera off-axis for the intro sweep.
 camera.position.set(0, 4, 22);
 
 /* ------------------------------------------------------------------------
-   2. HEART PARTICLE SYSTEM
-   Built from the classic parametric heart curve, extruded into a soft
-   volumetric shell (each particle gets a randomized inward offset and a
-   little z-depth so it reads as a 3D blob, not a flat outline).
+   1b. SHARED GLOW TEXTURE
+   A soft radial-gradient sprite texture reused by shooting stars and the
+   bokeh circles — cheap to generate once, avoids duplicate canvases.
    ------------------------------------------------------------------------ */
-function heartCurve(t) {
-  // Classic parametric heart. t in [0, 2*PI].
-  const x = 16 * Math.pow(Math.sin(t), 3);
-  const y =
-    13 * Math.cos(t) -
-    5 * Math.cos(2 * t) -
-    2 * Math.cos(3 * t) -
-    Math.cos(4 * t);
-  return { x: x / 16, y: y / 16 }; // normalize to roughly [-1, 1]
+function makeGlowTexture(innerColor = "255,255,255", outerColor = "150,120,255") {
+  const size = 128;
+  const canvasEl = document.createElement("canvas");
+  canvasEl.width = canvasEl.height = size;
+  const ctx = canvasEl.getContext("2d");
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, `rgba(${innerColor},1)`);
+  gradient.addColorStop(0.4, `rgba(${outerColor},0.8)`);
+  gradient.addColorStop(1, `rgba(${outerColor},0)`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, size, size);
+  const texture = new THREE.CanvasTexture(canvasEl);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
 }
 
-function buildHeart() {
-  const { particleCount, scale, shellJitter, color, coreColor, size } =
-    CONFIG.heart;
+const glowTextureWhite = makeGlowTexture("255,255,255", "255,255,255");
+const glowTexturePurple = makeGlowTexture("255,255,255", "150,120,255");
+
+
+   Both the nebula (glow particles) and the photo planes are scattered
+   along the same circle, offset radially within a band
+   (bandInner..bandOuter) rather than filled all the way to the center.
+   That's what produces the hollow, ring-like look — same structure as a
+   circular "galaxy" look from the reference.
+   a circle.
+   ------------------------------------------------------------------------ */
+function ringCurve(t) {
+  // Plain circle — the reference's formation is a circular/elliptical
+  // ring (like Saturn's rings around a hollow center).
+  return { x: Math.cos(t), y: Math.sin(t) };
+}
+
+const formationGroup = new THREE.Group();
+formationGroup.rotation.set(CONFIG.formation.tiltX, 0, CONFIG.formation.tiltZ);
+scene.add(formationGroup);
+
+/* --- 2a. Nebula: glowing particle cloud tracing the ring band --- */
+function buildNebula() {
+  const { particleCount, jitter, color, hotColor, size, opacity } = CONFIG.nebula;
+  const { scale, bandInner, bandOuter } = CONFIG.formation;
 
   const positions = new Float32Array(particleCount * 3);
   const colors = new Float32Array(particleCount * 3);
   const baseColor = new THREE.Color(color);
-  const hotColor = new THREE.Color(coreColor);
+  const hot = new THREE.Color(hotColor);
 
   for (let i = 0; i < particleCount; i++) {
     const t = Math.random() * Math.PI * 2;
-    const { x, y } = heartCurve(t);
+    const { x, y } = ringCurve(t);
 
-    // Pull each point inward by a random amount so the heart fills in
-    // as a volume rather than sitting only on the outline.
-    const fill = Math.pow(Math.random(), 0.5); // bias toward the edge slightly
-    let px = x * fill;
-    let py = y * fill;
+    // Slight bias toward the inner edge so the rim reads brighter/denser,
+    // fading outward — matches the reference's bright-inner, soft-outer glow.
+    const frac = THREE.MathUtils.lerp(
+      bandInner,
+      bandOuter,
+      Math.pow(Math.random(), 1.6)
+    );
 
-    // Add soft jitter for a fluffy/particle-cloud edge, plus depth on z.
-    px += (Math.random() - 0.5) * shellJitter * 0.15;
-    py += (Math.random() - 0.5) * shellJitter * 0.15;
-    const pz = (Math.random() - 0.5) * shellJitter;
+    let px = x * frac * scale;
+    let pz = y * frac * scale;
+    let py = 0;
+
+    // Fluffy jitter in all three axes so it reads as a soft particle cloud,
+    // not a hard line.
+    px += (Math.random() - 0.5) * jitter;
+    pz += (Math.random() - 0.5) * jitter;
+    py += (Math.random() - 0.5) * jitter * 0.6;
 
     const idx = i * 3;
-    positions[idx] = px * scale;
-    positions[idx + 1] = py * scale;
-    positions[idx + 2] = pz * scale;
+    positions[idx] = px;
+    positions[idx + 1] = py;
+    positions[idx + 2] = pz;
 
-    // Blend toward the hot core color near the center for a glowing heart.
-    const distFromCenter = Math.sqrt(px * px + py * py);
-    const mixT = THREE.MathUtils.clamp(1 - distFromCenter, 0, 1);
-    const c = baseColor.clone().lerp(hotColor, mixT * 0.5);
+    const mixT = THREE.MathUtils.clamp(
+      1 - (frac - bandInner) / (bandOuter - bandInner),
+      0,
+      1
+    );
+    const c = baseColor.clone().lerp(hot, mixT * 0.75);
     colors[idx] = c.r;
     colors[idx + 1] = c.g;
     colors[idx + 2] = c.b;
@@ -172,26 +246,185 @@ function buildHeart() {
     size,
     vertexColors: true,
     transparent: true,
-    opacity: 0.9,
+    opacity,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
     sizeAttenuation: true,
   });
 
   const points = new THREE.Points(geometry, material);
-  // Heart curve's "up" is +y with the curve as authored; flip so the point
-  // of the heart faces down naturally.
-  points.rotation.z = Math.PI;
   return points;
 }
 
-const heart = buildHeart();
-scene.add(heart);
+const nebula = buildNebula();
+formationGroup.add(nebula);
 
-// Soft point light near the core to add a subtle glow tint to nearby objects.
-const coreLight = new THREE.PointLight(0xb79cff, 2.2, 15, 2);
+const coreLight = new THREE.PointLight(0xb79cff, 2.2, 20, 2);
 coreLight.position.set(0, 0, 0);
-scene.add(coreLight);
+formationGroup.add(coreLight);
+
+/* --- 2a-2. Moon: a solid-looking particle sphere filling the ring's
+   hollow center, instead of leaving it empty. --- */
+function buildMoon() {
+  const { particleCount, radiusMult, color, hotColor, size, opacity } = CONFIG.moon;
+  const { scale, bandInner } = CONFIG.formation;
+  const radius = scale * bandInner * radiusMult;
+
+  const positions = new Float32Array(particleCount * 3);
+  const colors = new Float32Array(particleCount * 3);
+  const baseColor = new THREE.Color(color);
+  const hot = new THREE.Color(hotColor);
+
+  for (let i = 0; i < particleCount; i++) {
+    // Uniform sampling within a sphere volume (cube-root of a uniform
+    // random radius) so the moon looks solid/filled rather than a shell.
+    const r = radius * Math.cbrt(Math.random());
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(THREE.MathUtils.randFloatSpread(2));
+
+    const idx = i * 3;
+    positions[idx] = r * Math.sin(phi) * Math.cos(theta);
+    positions[idx + 1] = r * Math.sin(phi) * Math.sin(theta);
+    positions[idx + 2] = r * Math.cos(phi);
+
+    // Mostly grey-white with a bit of random highlight variation so it
+    // reads as a textured/cratered surface rather than a flat color.
+    const c = baseColor.clone().lerp(hot, Math.pow(Math.random(), 3) * 0.6);
+    colors[idx] = c.r;
+    colors[idx + 1] = c.g;
+    colors[idx + 2] = c.b;
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+
+  const material = new THREE.PointsMaterial({
+    size,
+    vertexColors: true,
+    transparent: true,
+    opacity,
+    depthWrite: true,
+    sizeAttenuation: true,
+  });
+
+  return new THREE.Points(geometry, material);
+}
+
+const moon = buildMoon();
+formationGroup.add(moon);
+
+/* --- 2b. Photos: planes scattered along the same ring band --- */
+function createOrbitImages() {
+  const {
+    urls,
+    photoCount,
+    planeHeight,
+    bandInnerMult,
+    bandOuterMult,
+    bobSpeed,
+    bobAmount,
+  } = CONFIG.orbitImages;
+  const { scale, bandInner, bandOuter } = CONFIG.formation;
+  const loader = new THREE.TextureLoader();
+  const meshes = [];
+
+  // Load each unique texture once, then reuse it across many planes —
+  // keeps this cheap even with a few hundred photos on screen.
+  const textureCache = urls.map((url) => loader.load(url));
+
+  const innerFrac = bandInner * bandInnerMult;
+  const outerFrac = bandOuter * bandOuterMult;
+
+  for (let i = 0; i < photoCount; i++) {
+    const urlIndex = i % urls.length;
+    const texture = textureCache[urlIndex];
+
+    const geometry = new THREE.PlaneGeometry(planeHeight, planeHeight);
+    const material = new THREE.MeshBasicMaterial({
+      map: texture,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+
+    const t = Math.random() * Math.PI * 2;
+    const frac = THREE.MathUtils.lerp(innerFrac, outerFrac, Math.random());
+
+    mesh.userData.t = t;
+    mesh.userData.frac = frac;
+    mesh.userData.jitterY = (Math.random() - 0.5) * 1.1;
+    mesh.userData.bobPhase = Math.random() * Math.PI * 2;
+    mesh.userData.bobSpeed = bobSpeed * THREE.MathUtils.randFloat(0.7, 1.3);
+    mesh.userData.bobAmount = bobAmount * THREE.MathUtils.randFloat(0.6, 1.4);
+    mesh.userData.spin = THREE.MathUtils.randFloatSpread(0.5);
+    mesh.userData.urlIndex = urlIndex;
+
+    formationGroup.add(mesh);
+    meshes.push(mesh);
+
+    gsap.to(material, {
+      opacity: 1,
+      duration: 1,
+      delay: Math.random() * 1.5,
+      ease: "power1.out",
+    });
+  }
+
+  // Once each texture finishes loading, correct that image's aspect ratio
+  // across every plane using it (they all start as squares).
+  textureCache.forEach((texture, urlIndex) => {
+    const applyAspect = () => {
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const aspect = texture.image.width / texture.image.height;
+      meshes
+        .filter((m) => m.userData.urlIndex === urlIndex)
+        .forEach((mesh) => {
+          mesh.geometry.dispose();
+          mesh.geometry = new THREE.PlaneGeometry(planeHeight * aspect, planeHeight);
+        });
+    };
+    if (texture.image) applyAspect();
+    else texture.addEventListener?.("load", applyAspect);
+  });
+
+  return meshes;
+}
+
+const orbitMeshes = createOrbitImages();
+
+/* --- 2c. Per-frame update for the whole formation --- */
+function updateFormation(elapsed, dt) {
+  const { scale, spinSpeed } = CONFIG.formation;
+  formationGroup.rotation.y = elapsed * spinSpeed;
+
+  // Nebula heartbeat pulse.
+  const pulse =
+    1 + Math.sin(elapsed * CONFIG.nebula.pulseSpeed) * CONFIG.nebula.pulseAmount;
+  nebula.scale.setScalar(pulse);
+
+  // Moon spins slowly and independently of the ring's own rotation.
+  moon.rotation.y += CONFIG.moon.spinSpeed * dt;
+
+  orbitMeshes.forEach((mesh) => {
+    const { t, frac, jitterY, bobPhase, bobSpeed, bobAmount } = mesh.userData;
+    const { x, y } = ringCurve(t);
+    const bob = Math.sin(elapsed * bobSpeed + bobPhase) * bobAmount;
+
+    mesh.position.set(
+      x * frac * scale,
+      jitterY + bob,
+      y * frac * scale
+    );
+
+    if (CONFIG.orbitImages.billboard) {
+      mesh.quaternion.copy(camera.quaternion);
+      mesh.rotateZ(mesh.userData.spin * 0.15);
+    }
+  });
+}
 
 /* ------------------------------------------------------------------------
    3. STARFIELD (distant, subtle background depth)
@@ -201,7 +434,6 @@ function buildStarfield() {
   const positions = new Float32Array(count * 3);
 
   for (let i = 0; i < count; i++) {
-    // Random point in a spherical shell so stars don't clump at center.
     const r = THREE.MathUtils.randFloat(minRadius, radius);
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(THREE.MathUtils.randFloatSpread(2));
@@ -231,35 +463,58 @@ scene.add(starfield);
 
 /* ------------------------------------------------------------------------
    4. SHOOTING STARS
-   Each one is a small glowing head with a fading trail, spawned at a
-   random position/direction just outside view and animated across the sky.
-   Pooled/recycled rather than recreated to stay cheap.
    ------------------------------------------------------------------------ */
 class ShootingStar {
   constructor() {
-    const { trailLength, color } = CONFIG.shootingStars;
-
-    const headGeo = new THREE.SphereGeometry(0.12, 8, 8);
-    const headMat = new THREE.MeshBasicMaterial({ color });
-    this.head = new THREE.Mesh(headGeo, headMat);
-
-    // Trail is a thin line stretching behind the head, faded via vertex alpha.
-    const trailGeo = new THREE.BufferGeometry();
-    const trailPositions = new Float32Array(trailLength * 3);
-    trailGeo.setAttribute(
-      "position",
-      new THREE.BufferAttribute(trailPositions, 3)
-    );
-    const trailMat = new THREE.LineBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0.5,
-    });
-    this.trail = new THREE.Line(trailGeo, trailMat);
+    const { trailLength, color, headSize, haloSize } = CONFIG.shootingStars;
 
     this.group = new THREE.Group();
+
+    // Soft wide halo sitting behind/around the head for a glowing look.
+    this.halo = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: glowTextureWhite,
+        color,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
+    );
+    this.halo.scale.set(haloSize, haloSize, 1);
+    this.group.add(this.halo);
+
+    // Bright point at the very front of the trail.
+    this.head = new THREE.Sprite(
+      new THREE.SpriteMaterial({
+        map: glowTextureWhite,
+        color,
+        transparent: true,
+        opacity: 0,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
+    );
+    this.head.scale.set(headSize, headSize, 1);
     this.group.add(this.head);
-    this.group.add(this.trail);
+
+    // Tapering trail of glow sprites behind the head.
+    this.trailSprites = [];
+    for (let i = 0; i < trailLength; i++) {
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: glowTextureWhite,
+          color,
+          transparent: true,
+          opacity: 0,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        })
+      );
+      this.group.add(sprite);
+      this.trailSprites.push(sprite);
+    }
+
     this.group.visible = false;
     scene.add(this.group);
 
@@ -268,11 +523,11 @@ class ShootingStar {
   }
 
   spawn() {
-    const r = 40;
+    const r = 60;
     const start = new THREE.Vector3(
       THREE.MathUtils.randFloatSpread(r),
-      THREE.MathUtils.randFloat(10, 30),
-      THREE.MathUtils.randFloatSpread(r) - 10
+      THREE.MathUtils.randFloat(20, 50),
+      THREE.MathUtils.randFloatSpread(r) - 15
     );
     this.direction = new THREE.Vector3(
       THREE.MathUtils.randFloat(-1, -0.4),
@@ -281,34 +536,46 @@ class ShootingStar {
     ).normalize();
 
     this.position = start.clone();
-    this.history = new Array(CONFIG.shootingStars.trailLength).fill(
-      start.clone()
-    );
+    this.history = new Array(this.trailSprites.length).fill(start.clone());
     this.life = 0;
-    this.maxLife = THREE.MathUtils.randFloat(1.4, 2.4);
+    this.maxLife = THREE.MathUtils.randFloat(1.3, 2.2);
     this.active = true;
     this.group.visible = true;
   }
 
   update(dt) {
     if (!this.active) return;
+    const { headSize, haloSize } = CONFIG.shootingStars;
+
     this.life += dt;
     this.position.addScaledVector(this.direction, CONFIG.shootingStars.speed * dt);
     this.history.pop();
     this.history.unshift(this.position.clone());
 
+    // Fade in quickly, then fade out over the back half of its life so it
+    // doesn't just vanish mid-screen.
+    const fadeIn = Math.min(this.life / 0.25, 1);
+    const fadeOut = 1 - Math.max(this.life / this.maxLife - 0.5, 0) * 2;
+    const fade = Math.min(fadeIn, fadeOut);
+
     this.head.position.copy(this.position);
-
-    const posAttr = this.trail.geometry.attributes.position;
-    for (let i = 0; i < this.history.length; i++) {
-      const p = this.history[i];
-      posAttr.setXYZ(i, p.x, p.y, p.z);
-    }
-    posAttr.needsUpdate = true;
-
-    const fade = 1 - this.life / this.maxLife;
     this.head.material.opacity = fade;
-    this.trail.material.opacity = 0.5 * fade;
+
+    this.halo.position.copy(this.position);
+    this.halo.material.opacity = fade * 0.45;
+    this.halo.scale.set(haloSize * (0.9 + fade * 0.2), haloSize * (0.9 + fade * 0.2), 1);
+
+    const n = this.trailSprites.length;
+    for (let i = 0; i < n; i++) {
+      const sprite = this.trailSprites[i];
+      const p = this.history[i];
+      sprite.position.copy(p);
+
+      const t = 1 - i / (n - 1); // 1 near the head, 0 at the tail end
+      const size = THREE.MathUtils.lerp(0.08, headSize * 0.85, t);
+      sprite.scale.set(size, size, 1);
+      sprite.material.opacity = t * t * fade * 0.8;
+    }
 
     if (this.life >= this.maxLife) {
       this.active = false;
@@ -321,140 +588,67 @@ const shootingStarPool = Array.from(
   { length: CONFIG.shootingStars.maxActive },
   () => new ShootingStar()
 );
-let nextSpawnTimer = THREE.MathUtils.randFloat(
-  ...CONFIG.shootingStars.spawnIntervalRange
-);
+let nextSpawnTimer = THREE.MathUtils.randFloat(...CONFIG.shootingStars.spawnIntervalRange);
 
 function updateShootingStars(dt) {
   nextSpawnTimer -= dt;
   if (nextSpawnTimer <= 0) {
     const idle = shootingStarPool.find((s) => !s.active);
     if (idle) idle.spawn();
-    nextSpawnTimer = THREE.MathUtils.randFloat(
-      ...CONFIG.shootingStars.spawnIntervalRange
-    );
+    nextSpawnTimer = THREE.MathUtils.randFloat(...CONFIG.shootingStars.spawnIntervalRange);
   }
   shootingStarPool.forEach((s) => s.update(dt));
 }
 
 /* ------------------------------------------------------------------------
-   5. ORBITING IMAGE PLANES
-   Each photo orbits the heart on its own randomized ring/speed/tilt and
-   billboards to face the camera every frame.
+   5. BOKEH — soft translucent purple circles scattered through the scene
    ------------------------------------------------------------------------ */
-const orbitGroup = new THREE.Group();
-scene.add(orbitGroup);
+function buildBokeh() {
+  const { count, minSize, maxSize, color, spreadRadius, minRadius } = CONFIG.bokeh;
+  const texture = glowTexturePurple;
+  const group = new THREE.Group();
 
-function createOrbitImages() {
-  const { urls, planeHeight, minRadius, maxRadius, minSpeed, maxSpeed, maxTilt } =
-    CONFIG.orbitImages;
-  const loader = new THREE.TextureLoader();
-  const meshes = [];
-
-  urls.forEach((url, i) => {
-    // Placeholder plane until the texture loads, sized as a square; it's
-    // resized to the image's real aspect ratio once loaded.
-    const geometry = new THREE.PlaneGeometry(planeHeight, planeHeight);
-    const material = new THREE.MeshBasicMaterial({
-      color: 0x222222,
+  for (let i = 0; i < count; i++) {
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      color,
       transparent: true,
-      opacity: 0,
-      side: THREE.DoubleSide,
+      opacity: THREE.MathUtils.randFloat(0.15, 0.55),
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
-    const mesh = new THREE.Mesh(geometry, material);
+    const sprite = new THREE.Sprite(material);
 
-    // Orbit parameters — randomized per image for a natural spread.
-    mesh.userData.orbitRadius = THREE.MathUtils.lerp(
-      minRadius,
-      maxRadius,
-      i / Math.max(urls.length - 1, 1)
-    ) + THREE.MathUtils.randFloatSpread(0.6);
-    mesh.userData.orbitSpeed =
-      THREE.MathUtils.randFloat(minSpeed, maxSpeed) *
-      (Math.random() < 0.5 ? 1 : -1); // mixed direction
-    mesh.userData.orbitAngle = Math.random() * Math.PI * 2;
-    mesh.userData.tiltX = THREE.MathUtils.randFloatSpread(maxTilt);
-    mesh.userData.tiltZ = THREE.MathUtils.randFloatSpread(maxTilt * 0.4);
-    mesh.userData.bobSpeed = THREE.MathUtils.randFloat(0.4, 1.1);
-    mesh.userData.bobAmount = THREE.MathUtils.randFloat(0.15, 0.45);
-    mesh.userData.bobPhase = Math.random() * Math.PI * 2;
-
-    orbitGroup.add(mesh);
-    meshes.push(mesh);
-
-    loader.load(
-      url,
-      (texture) => {
-        texture.colorSpace = THREE.SRGBColorSpace;
-        const aspect = texture.image.width / texture.image.height;
-        mesh.geometry.dispose();
-        mesh.geometry = new THREE.PlaneGeometry(
-          planeHeight * aspect,
-          planeHeight
-        );
-        mesh.material.map = texture;
-        mesh.material.color.set(0xffffff);
-        gsap.to(mesh.material, { opacity: 1, duration: 0.8, ease: "power1.out" });
-      },
-      undefined,
-      () => {
-        // On error, just leave the placeholder subtly visible instead of blank.
-        gsap.to(mesh.material, { opacity: 0.25, duration: 0.5 });
-      }
+    const r = THREE.MathUtils.randFloat(minRadius, spreadRadius);
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(THREE.MathUtils.randFloatSpread(2));
+    sprite.position.set(
+      r * Math.sin(phi) * Math.cos(theta),
+      r * Math.sin(phi) * Math.sin(theta) * 0.6,
+      r * Math.cos(phi)
     );
-  });
 
-  return meshes;
+    const s = THREE.MathUtils.randFloat(minSize, maxSize);
+    sprite.scale.set(s, s, 1);
+
+    group.add(sprite);
+  }
+
+  return group;
 }
 
-const orbitMeshes = createOrbitImages();
-
-function updateOrbitImages(elapsed) {
-  orbitMeshes.forEach((mesh) => {
-    const {
-      orbitRadius,
-      orbitSpeed,
-      orbitAngle: baseAngle,
-      tiltX,
-      tiltZ,
-      bobSpeed,
-      bobAmount,
-      bobPhase,
-    } = mesh.userData;
-
-    const angle = baseAngle + elapsed * orbitSpeed;
-    const x = Math.cos(angle) * orbitRadius;
-    const z = Math.sin(angle) * orbitRadius;
-    const y = Math.sin(elapsed * bobSpeed + bobPhase) * bobAmount;
-
-    // Apply orbital-plane tilt by rotating the (x, y, z) point around
-    // the origin on the X and Z axes.
-    const cosX = Math.cos(tiltX), sinX = Math.sin(tiltX);
-    const y1 = y * cosX - z * sinX;
-    const z1 = y * sinX + z * cosX;
-
-    const cosZ = Math.cos(tiltZ), sinZ = Math.sin(tiltZ);
-    const x2 = x * cosZ - y1 * sinZ;
-    const y2 = x * sinZ + y1 * cosZ;
-
-    mesh.position.set(x2, y2, z1);
-
-    if (CONFIG.orbitImages.billboard) {
-      mesh.quaternion.copy(camera.quaternion);
-    }
-  });
-}
+const bokeh = buildBokeh();
+scene.add(bokeh);
 
 /* ------------------------------------------------------------------------
    6. CONTROLS (drag to rotate, wheel/pinch to zoom, with damping)
-   Disabled during the intro fly-through, enabled once it completes.
    ------------------------------------------------------------------------ */
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
 controls.enablePan = false;
-controls.minDistance = 4.5;
-controls.maxDistance = 30;
+controls.minDistance = 6;
+controls.maxDistance = 60;
 controls.rotateSpeed = 0.6;
 controls.zoomSpeed = 0.8;
 controls.target.set(0, 0, 0);
@@ -462,12 +656,10 @@ controls.enabled = false; // turned on after the intro finishes
 
 /* ------------------------------------------------------------------------
    7. INTRO CAMERA FLY-THROUGH
-   A smooth sweep around the heart from an angled offset, using GSAP to
-   interpolate a spherical path, then handing off to OrbitControls.
    ------------------------------------------------------------------------ */
 function playIntro() {
   const path = { t: 0 };
-  const startRadius = 22;
+  const startRadius = 46;
   const endRadius = CONFIG.camera.restRadius;
   const restPolar = THREE.MathUtils.degToRad(CONFIG.camera.restPolarDeg);
 
@@ -476,8 +668,6 @@ function playIntro() {
     duration: CONFIG.camera.introDuration,
     ease: "power2.inOut",
     onUpdate: () => {
-      // Spiral inward while sweeping azimuth ~1.5 turns and easing the
-      // polar angle down to the resting viewing angle.
       const azimuth = path.t * Math.PI * 3;
       const polar = THREE.MathUtils.lerp(
         THREE.MathUtils.degToRad(35),
@@ -503,8 +693,6 @@ function playIntro() {
 
 /* ------------------------------------------------------------------------
    8. AUDIO — autoplay-safe background music with a mute toggle
-   Browsers block audio before user interaction, so playback is attempted
-   on the first pointerdown/click/touch on the canvas.
    ------------------------------------------------------------------------ */
 const audioEl = document.getElementById("bg-audio");
 audioEl.volume = 0.55;
@@ -526,12 +714,10 @@ function tryStartAudio() {
   if (hasStartedAudio) return;
   hasStartedAudio = true;
   audioEl.play().catch(() => {
-    // Autoplay was blocked; the user can still tap the sound toggle.
     hasStartedAudio = false;
   });
 }
 
-// First interaction anywhere on the canvas kicks off playback.
 ["pointerdown", "touchstart", "click"].forEach((evt) => {
   window.addEventListener(evt, tryStartAudio, { once: true, passive: true });
 });
@@ -554,10 +740,7 @@ function handleResize() {
   renderer.setSize(w, h);
 }
 window.addEventListener("resize", handleResize);
-// Handle mobile browser UI show/hide (address bar) which fires orientationchange.
-window.addEventListener("orientationchange", () =>
-  setTimeout(handleResize, 200)
-);
+window.addEventListener("orientationchange", () => setTimeout(handleResize, 200));
 
 /* ------------------------------------------------------------------------
    10. RENDER LOOP
@@ -568,20 +751,13 @@ let rafId = null;
 function animate() {
   rafId = requestAnimationFrame(animate);
 
-  const dt = Math.min(clock.getDelta(), 0.05); // clamp to avoid big jumps on tab-switch
+  const dt = Math.min(clock.getDelta(), 0.05);
   const elapsed = clock.getElapsedTime();
 
-  // Heart: gentle pulse + slow idle rotation.
-  const pulse =
-    1 + Math.sin(elapsed * CONFIG.heart.pulseSpeed) * CONFIG.heart.pulseAmount;
-  heart.scale.setScalar(pulse);
-  heart.rotation.y += CONFIG.heart.rotationSpeed * dt;
-
-  // Slow starfield drift for subtle parallax life.
   starfield.rotation.y += 0.002 * dt;
 
   updateShootingStars(dt);
-  updateOrbitImages(elapsed);
+  updateFormation(elapsed, dt);
 
   if (controls.enabled) controls.update();
 
@@ -590,8 +766,6 @@ function animate() {
 
 /* ------------------------------------------------------------------------
    11. CLEANUP
-   Call disposeScene() if this app is ever torn down (e.g. removed from a
-   SPA route) to free GPU memory and detach listeners.
    ------------------------------------------------------------------------ */
 function disposeScene() {
   cancelAnimationFrame(rafId);

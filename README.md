@@ -1,79 +1,89 @@
-# Orbiting Heart
+# Orbiting Ring
 
-A 3D particle heart core with photo planes orbiting it, a starfield with
-periodic shooting stars, a cinematic camera intro, drag/pinch controls, and
-autoplay-safe background music.
+A hollow, circular ring formation — glowing particle nebula + orbiting
+photo planes, both traced along the same circle with a dark hollow center
+(accretion-disk style) — set inside a starfield with periodic shooting
+stars and soft purple bokeh circles. Cinematic camera intro, then
+drag/pinch controls, plus autoplay-safe background music.
 
 ## Files
 
 ```
 index.html   HTML boilerplate, audio element, sound-toggle button, imports
 style.css    Fullscreen canvas + floating UI styling
-main.js      All scene logic (heart, stars, orbits, camera, audio, resize)
+main.js      All scene logic (formation, stars, bokeh, camera, audio, resize)
 audio/       Put your background track here as theme.mp3 (or edit the <source> path)
 ```
 
-No build step — it's plain ES modules loaded via an import map from a CDN
-(three.js r160 + GSAP). Just serve the folder over http(s); browsers block
-ES module imports from `file://`.
+No build step — plain ES modules loaded via an import map from a CDN
+(three.js r160 + GSAP). Serve the folder over http(s); browsers block ES
+module imports from `file://`.
 
 ```bash
-# any static server works, e.g.:
 npx serve .
 # or
 python3 -m http.server
 ```
 
+## How the ring + moon work
+
+Both the particle nebula and the photo planes sample points from a
+circle (`ringCurve` in main.js). Instead of filling the disc all the way
+in, each point is pushed outward from the center by a random fraction
+between `formation.bandInner` and `formation.bandOuter` — so everything
+clusters in a band that traces the circle's outline. The whole formation
+is tilted (`formation.tiltX/tiltZ`) and viewed from a near-equatorial
+camera angle so it reads as an oblique ellipse, exactly like the
+screenshots.
+
+Rather than leaving that inner gap empty, a **moon** — a solid-looking
+particle sphere (`buildMoon` in main.js) — fills most of it, spinning
+slowly on its own independent of the ring's rotation. It's sized as a
+fraction of the ring's inner radius (`moon.radiusMult`) so there's a
+thin dark gap between the moon's edge and the start of the bright band,
+matching the reference.
+
 ## Swapping in your own images
 
-Edit `CONFIG.orbitImages.urls` near the top of `main.js` — it's a flat array
-of image URLs. Any aspect ratio works; each plane resizes to match its
-image once loaded. Add/remove entries freely; orbit radius/speed/tilt are
-auto-distributed and randomized per image.
+Edit `CONFIG.orbitImages.urls` — the ring reuses this list across
+`photoCount` planes (420 by default) to get the dense, reference-style
+swarm, so a handful of URLs is enough. Photos fray slightly wider than the
+nebula band (`bandInnerMult`/`bandOuterMult`).
 
 ## Adding your own music
 
 Drop an mp3 at `audio/theme.mp3`, or change the `<source src="...">` in
-`index.html` to point anywhere else. Playback starts on the user's first
-tap/click (browser autoplay policy), and the corner button toggles mute.
+`index.html`. Playback starts on the user's first tap/click (browser
+autoplay policy); the corner button toggles mute.
 
 ## Key tunables (all in `CONFIG` at the top of main.js)
 
 | Section | What it controls |
 |---|---|
-| `heart.particleCount` | density of the heart's particle shell |
-| `heart.scale` / `pulseAmount` / `pulseSpeed` | heart size and heartbeat animation |
-| `starfield.count` / `radius` | background star density and spread |
-| `shootingStars.spawnIntervalRange` / `speed` | how often & how fast shooting stars cross the sky |
-| `orbitImages.minRadius/maxRadius` | how close/far the orbit rings sit from the heart |
-| `orbitImages.minSpeed/maxSpeed` | orbit speed range |
-| `orbitImages.maxTilt` | how steeply orbital planes can tilt (planetary look) |
+| `formation.scale` | overall size of the ring |
+| `formation.bandInner/bandOuter` | how thick the ring band is / how big the hollow center is |
+| `formation.tiltX/tiltZ` | viewing tilt of the whole ring |
+| `formation.spinSpeed` | how fast the whole formation rotates as one piece |
+| `nebula.particleCount` | density of the glowing particle ring |
+| `nebula.pulseAmount/pulseSpeed` | breathing/pulse animation |
+| `moon.particleCount` | density of the moon's particle surface |
+| `moon.radiusMult` | how much of the ring's hollow center the moon fills |
+| `moon.spinSpeed` | the moon's own independent rotation speed |
+| `orbitImages.photoCount` | how many photo planes populate the ring |
+| `orbitImages.bandInnerMult/bandOuterMult` | how much wider the photo scatter is than the nebula band |
+| `starfield.count/radius` | background star density and spread |
+| `shootingStars.spawnIntervalRange/speed` | how often & how fast shooting stars cross the sky |
+| `shootingStars.trailLength/headSize/haloSize` | length and glow size of each shooting star's comet trail |
+| `bokeh.count/minSize/maxSize` | density and size of the background glow circles |
 | `camera.introDuration` | length of the opening fly-through, seconds |
-| `camera.restRadius` / `restPolarDeg` | resting camera distance/angle once the user has control |
-
-## Notes on the heart math
-
-The core uses the classic parametric heart curve:
-
-```
-x(t) = 16 sin³(t)
-y(t) = 13 cos(t) − 5 cos(2t) − 2 cos(3t) − cos(4t)
-```
-
-Each particle samples a random `t`, is pulled toward the center by a random
-`fill` factor (so the heart reads as a filled volume, not just an outline),
-then gets a bit of jitter and z-depth (`heart.shellJitter`) to look like a
-soft 3D particle cloud instead of a flat curve.
+| `camera.restRadius/restPolarDeg` | resting camera distance/angle once the user has control |
 
 ## Performance notes
 
-- Particle systems (heart + starfield) use `THREE.Points` with a single
-  draw call each — cheap regardless of count.
-- Orbiting images are `MeshBasicMaterial` planes (unlit) with additive-free
-  blending, texture-loaded once and reused every frame.
-- `devicePixelRatio` is capped at 2 to avoid killing frame rate on high-DPI
-  phones.
-- `disposeScene()` at the bottom of `main.js` tears down geometries,
-  materials, textures, the renderer, and listeners — call it if you ever
-  mount/unmount this inside a larger app (e.g. an SPA route change).
-# Galaxy-
+- The nebula and starfield are each a single `THREE.Points` draw call —
+  cheap regardless of particle count.
+- Photo planes reuse a small pool of loaded textures across hundreds of
+  meshes rather than loading each one individually.
+- `devicePixelRatio` is capped at 2 to protect frame rate on high-DPI phones.
+- `disposeScene()` at the bottom of `main.js` tears everything down —
+  call it if this is ever mounted/unmounted inside a larger app.
