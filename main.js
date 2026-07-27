@@ -173,12 +173,13 @@ const glowTextureWhite = makeGlowTexture("255,255,255", "255,255,255");
 const glowTexturePurple = makeGlowTexture("255,255,255", "150,120,255");
 
 
+/* ------------------------------------------------------------------------
+   2. THE RING FORMATION
    Both the nebula (glow particles) and the photo planes are scattered
    along the same circle, offset radially within a band
    (bandInner..bandOuter) rather than filled all the way to the center.
-   That's what produces the hollow, ring-like look — same structure as a
+   That's what produces the hollow, ring-like look — same structure as the
    circular "galaxy" look from the reference.
-   a circle.
    ------------------------------------------------------------------------ */
 function ringCurve(t) {
   // Plain circle — the reference's formation is a circular/elliptical
